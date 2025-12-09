@@ -57,48 +57,8 @@ openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 chmod 600 server.key
 ```
 
-2) 更新 Nginx 配置（宿主机 /opt/nginx/conf/conf.d/christmas-tree.conf 示例）
 
-```bash
-upstream christmas_tree_frontend { server 127.0.0.1:8080; }
-upstream christmas_tree_backend  { server 127.0.0.1:3001; }
-
-server {
-    listen 80;
-    server_name _;
-    # 可选：HTTP 转 HTTPS
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name _;
-
-    ssl_certificate     /opt/nginx/certs/server.crt;
-    ssl_certificate_key /opt/nginx/certs/server.key;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_ciphers         HIGH:!aNULL:!MD5;
-
-    location / {
-        proxy_pass http://christmas_tree_frontend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    location /api/ {
-        proxy_pass http://christmas_tree_backend;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 20M;
-    }
-}
-```
-
-3) 客户端信任证书
+2客户端信任证书
 
 - 把 /opt/nginx/certs/server.crt 下载到你的电脑/手机，导入到“受信任的根证书”或“用户证书”并信任。
 

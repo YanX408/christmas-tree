@@ -11,6 +11,8 @@ services:
     volumes:
       - /opt/christmas-tree/public/photos:/usr/share/nginx/html/photos:ro
     restart: unless-stopped
+    networks:
+      - tree-net
 
   backend:
     build:
@@ -25,3 +27,25 @@ services:
     ports:
       - "3001:3001"
     restart: unless-stopped
+    networks:
+      - tree-net
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /opt/nginx/conf:/etc/nginx/conf.d
+      - /opt/nginx/certs:/opt/nginx/certs
+    restart: always
+    networks:
+      - tree-net
+
+networks:
+  tree-net:
+    driver: bridge

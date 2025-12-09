@@ -32,3 +32,4 @@ public/photos/tmp/
 
 # Keep README for documentation
 !public/photos/README.md
+public/photos/photos.json

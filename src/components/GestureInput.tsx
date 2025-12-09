@@ -53,8 +53,13 @@ const GestureInput: React.FC = () => {
       try {
         // 1. Start Camera Access (Parallel)
         const streamPromise = navigator.mediaDevices.getUserMedia({
-          video: { width: 320, height: 240, frameRate: { ideal: 30 } }
-        });
+          video: {
+            facingMode: "user",
+            width: 320,
+            height: 240,
+            frameRate: { ideal: 30 }
+          }
+        }).catch(() => navigator.mediaDevices.getUserMedia({ video: true }));
 
         // 2. Start MediaPipe Loading (Parallel)
         const recognizerPromise = (async () => {

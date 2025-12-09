@@ -1,4 +1,4 @@
-import React, { useState, Suspense, useContext, useEffect, useRef } from 'react';
+import React, { useState, Suspense, useContext, useEffect } from 'react';
 import { TreeContextType, AppState, TreeContext, PointerCoords, GestureDebugInfo } from './types';
 import Experience from './components/Experience';
 import GestureInput from './components/GestureInput';

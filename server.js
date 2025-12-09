@@ -27,17 +27,17 @@ const storage = multer.diskStorage({
     }
   },
   filename: (req, file, cb) => {
-    // 生成符合程序识别格式的文件名: YYYY_MM_ID.jpg
+    // 生成符合程序识别格式的文件名: YYYY_MM_ID.ext
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
-    const timestamp = Date.now();
     const ext = path.extname(file.originalname).toLowerCase();
-    
-    // 生成唯一ID（使用时间戳的后6位）
-    const id = String(timestamp).slice(-6);
-    
-    // 格式: YYYY_MM_ID.jpg
+
+    // 使用时间戳 + 随机 4 字节，降低冲突概率
+    const ts = Date.now().toString(36); // base36 时间戳
+    const rand = Math.random().toString(36).slice(2, 6); // 4位随机
+    const id = `${ts}${rand}`.slice(-8); // 取末 8 位
+
     cb(null, `${year}_${month}_${id}${ext}`);
   }
 });
@@ -139,24 +139,63 @@ app.delete('/api/photos/:filename', async (req, res) => {
     const photosDir = path.join(__dirname, 'public', 'photos');
     const filePath = path.join(photosDir, filename);
 
-    // 检查文件是否存在
+    // 尝试删除文件，不存在也继续同步 photos.json
     try {
-      await fs.access(filePath);
-    } catch {
-      return res.status(404).json({ error: '文件不存在' });
+      await fs.unlink(filePath);
+    } catch (err) {
+      // 忽略文件不存在等错误，确保 json 仍被更新
+      console.warn(`删除文件时警告: ${filename}`, err.message);
     }
 
-    // 删除文件
-    await fs.unlink(filePath);
-
-    // 从 photos.json 中移除
+    // 从 photos.json 中移除名称
     const photos = await readPhotosJson();
     const updatedPhotos = photos.filter(p => p !== filename);
     await writePhotosJson(updatedPhotos);
 
     res.json({
       success: true,
-      message: '照片删除成功'
+      message: '照片删除成功（或记录已清除）'
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 批量删除照片
+app.post('/api/photos/delete-batch', async (req, res) => {
+  try {
+    const { filenames } = req.body;
+    if (!Array.isArray(filenames) || filenames.length === 0) {
+      return res.status(400).json({ error: '缺少待删除文件列表' });
+    }
+
+    const photosDir = path.join(__dirname, 'public', 'photos');
+    const photos = await readPhotosJson();
+    const deleted = [];
+    const notFound = [];
+
+    for (const name of filenames) {
+      const filePath = path.join(photosDir, name);
+      try {
+        await fs.unlink(filePath);
+        deleted.push(name);
+      } catch (err) {
+        // 记录未找到/无法删除的文件，不中断其他删除
+        notFound.push(name);
+        // 继续处理 json，同样会清理名称
+        deleted.push(name);
+      }
+    }
+
+    // 更新 photos.json，移除已删除或请求删除的文件
+    const updated = photos.filter(p => !deleted.includes(p));
+    await writePhotosJson(updated);
+
+    res.json({
+      success: true,
+      deleted: Array.from(new Set(deleted)),
+      skipped: notFound.length > 0 ? Array.from(new Set(notFound)) : undefined,
+      message: `已删除 ${deleted.length} 个文件${notFound.length ? `，跳过 ${notFound.length} 个未找到/无法删除` : ''}`
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

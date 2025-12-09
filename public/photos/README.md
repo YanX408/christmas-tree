@@ -1,16 +1,48 @@
-# Your Memories Here
+# 照片目录
 
-This is the folder where the Christmas Tree looks for your photos.
+这是圣诞树加载照片的目录。
 
-### Instructions:
-1.  **Upload your photos** into this folder.
-2.  **Rename them** to numbers:
-    *   `1.jpg`
-    *   `2.jpg`
-    *   ...
-    *   `31.jpg`
+## 📸 如何添加你的照片
 
-### Notes:
-*   **Format**: JPG is recommended.
-*   **Size**: Vertical (Portrait) photos look best.
-*   **Missing Files**: If you upload fewer than 31 photos (e.g., only 1.jpg to 5.jpg), the app will automatically fill the remaining spots with random internet images.
+### 简单两步即可！
+
+1. **将照片放到这个目录** (`public/photos/`)
+   - 支持任意文件名，无需特殊命名规则
+   - 推荐格式：JPG、PNG
+   - 竖版照片效果最佳
+
+2. **在 `photos.json` 中添加文件名**
+   - 打开 `photos.json` 文件
+   - 在数组中添加你的照片文件名
+   - 保存即可
+
+### 示例
+
+假设你有以下照片：
+- `my_photo_1.jpg`
+- `vacation_2024.jpg`
+- `family_christmas.png`
+
+只需在 `photos.json` 中添加：
+
+```json
+[
+  "my_photo_1.jpg",
+  "vacation_2024.jpg",
+  "family_christmas.png"
+]
+```
+
+### 日期提取（可选）
+
+如果你希望照片按时间排序，可以在文件名中包含日期：
+- `2024_06_1.jpg` 或 `2024-06-01.jpg` → 会自动识别为 2024年6月
+- `20241225.jpg` → 会自动识别为 2024年12月
+- 如果没有日期信息，会按文件名字母顺序排序
+
+### 注意事项
+
+- **格式**: 推荐使用 JPG 或 PNG 格式
+- **尺寸**: 竖版（纵向）照片效果最佳
+- **排序**: 照片会按 `photos.json` 中的顺序显示
+- **缺失文件**: 如果文件不存在，会自动使用随机图片作为后备

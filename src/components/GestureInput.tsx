@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useContext, useState } from 'react';
 import { FilesetResolver, GestureRecognizer, DrawingUtils, NormalizedLandmark } from '@mediapipe/tasks-vision';
-import { TreeContext, TreeContextType } from '../types';
+import { TreeContext, TreeContextType, GestureDebugInfo } from '../types';
 
 const GestureInput: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset } = useContext(TreeContext) as TreeContextType;
+  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset, setDebugInfo } = useContext(TreeContext) as TreeContextType;
 
   const stateRef = useRef(appState);
   const photoRef = useRef(selectedPhotoUrl);
@@ -94,6 +94,19 @@ const GestureInput: React.FC = () => {
       } catch (error) {
         console.error("Error initializing MediaPipe:", error);
         setLoading(false);
+        
+        // 检查是否是 HTTPS 问题
+        if (error instanceof DOMException) {
+          if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+            console.error("摄像头权限被拒绝，请检查浏览器权限设置");
+          } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+            console.error("未找到摄像头设备");
+          } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+            console.error("摄像头无法访问，可能被其他应用占用");
+          } else if (error.message?.includes('secure context') || error.message?.includes('HTTPS')) {
+            alert('⚠️ 摄像头访问需要 HTTPS 连接！\n\n请使用 https:// 访问此应用，或使用 localhost。\n\n当前协议: ' + window.location.protocol);
+          }
+        }
       }
     };
     setupMediaPipe();
@@ -130,21 +143,35 @@ const GestureInput: React.FC = () => {
         let isPointing = false;
         let isPanning = false;
         let isZooming = false;
+        
+        // 手指状态（用于调试）
+        let indexExtended = false;
+        let middleExtended = false;
+        let ringExtended = false;
+        let pinkyExtended = false;
+        let thumbExtended = false;
+        let isFiveFingers = false;
+        let isTwoFingers = false;
+        let pinch = false;
+        
+        // 移动信息（用于调试）
+        let movementDx = 0;
+        let movementDy = 0;
 
         if (results.landmarks && results.landmarks.length > 0) {
           const landmarks = results.landmarks[0];
           const wrist = landmarks[0];
 
-          const indexExtended = isExtended(landmarks, 8, 5, wrist);
-          const middleExtended = isExtended(landmarks, 12, 9, wrist);
-          const ringExtended = isExtended(landmarks, 16, 13, wrist);
-          const pinkyExtended = isExtended(landmarks, 20, 17, wrist);
-          const thumbExtended = isExtended(landmarks, 4, 2, wrist);
+          indexExtended = isExtended(landmarks, 8, 5, wrist);
+          middleExtended = isExtended(landmarks, 12, 9, wrist);
+          ringExtended = isExtended(landmarks, 16, 13, wrist);
+          pinkyExtended = isExtended(landmarks, 20, 17, wrist);
+          thumbExtended = isExtended(landmarks, 4, 2, wrist);
 
           isPointing = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
-          const isFiveFingers = indexExtended && middleExtended && ringExtended && pinkyExtended && thumbExtended;
+          isFiveFingers = indexExtended && middleExtended && ringExtended && pinkyExtended && thumbExtended;
           // 两指检测（食指+中指伸出，无名指和小指收拢）- 用于平移
-          const isTwoFingers = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
+          isTwoFingers = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
 
           // 全局更新手掌位置 (无论什么手势，只要有手就追踪，防止 flickering 导致 dx 丢失)
           const palmX = (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
@@ -155,9 +182,9 @@ const GestureInput: React.FC = () => {
           if (lastPalmPos.current) {
             dx = (1.0 - palmX) - (1.0 - lastPalmPos.current.x); // x 轴镜像
             dy = palmY - lastPalmPos.current.y;
+            movementDx = dx;
+            movementDy = dy;
           }
-          lastPalmPos.current = { x: palmX, y: palmY };
-
           lastPalmPos.current = { x: palmX, y: palmY };
 
           // Relaxed movement threshold to 0.005 (was 0.003) to improve dwell stability
@@ -222,7 +249,7 @@ const GestureInput: React.FC = () => {
           }
 
           // --- 逻辑分支 2: 单指光标 & 点击 (Dwell or Pinch) ---
-          const pinch = isPinching(landmarks);
+          pinch = isPinching(landmarks);
 
           // 确保只有单指指向时才能点击，排除五指张开、两指等其他手势
           if (!isPanning && !isFiveFingers && !isTwoFingers && currentState === 'CHAOS' && (isPointing || pinch)) {
@@ -387,6 +414,39 @@ const GestureInput: React.FC = () => {
 
         setPointer(currentPointer);
 
+        // 收集调试信息
+        if (setDebugInfo) {
+          const debugData: GestureDebugInfo = {
+            handsDetected: results.landmarks?.length || 0,
+            gestures: results.gestures?.flat().map(g => ({
+              name: g.categoryName,
+              score: g.score
+            })) || [],
+            landmarks: (results.landmarks || []).map((landmarks, idx) => ({
+              handIndex: idx,
+              landmarks: landmarks.map(l => ({ x: l.x, y: l.y, z: l.z }))
+            })),
+            fingerStates: results.landmarks && results.landmarks.length > 0 ? {
+              indexExtended,
+              middleExtended,
+              ringExtended,
+              pinkyExtended,
+              thumbExtended
+            } : null,
+            detectedActions: {
+              isPointing,
+              isPanning,
+              isZooming,
+              isPinching: pinch,
+              isFiveFingers,
+              isTwoFingers
+            },
+            palmPosition: lastPalmPos.current,
+            movement: (movementDx !== 0 || movementDy !== 0) ? { dx: movementDx, dy: movementDy } : null
+          };
+          setDebugInfo(debugData);
+        }
+
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           // 注释：暂时隐藏手部骨骼线，保持简洁
@@ -421,29 +481,26 @@ const GestureInput: React.FC = () => {
 
   return (
     // 全屏背景布局 - 最底层
-    <div className="fixed inset-0 w-full h-full z-0">
-      {/* 摄像头视频背景层 */}
+    <div className="fixed inset-0 w-full h-full z-0 bg-black">
+      {/* 摄像头视频背景层 - 隐藏但保留功能 */}
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover z-0"
+        className="absolute inset-0 w-full h-full object-cover z-0 opacity-0 pointer-events-none"
         playsInline
         muted
         autoPlay
         style={{ transform: 'scaleX(-1)' }}
       />
 
-      {/* 半透明黑色遮罩 */}
-      <div className="absolute inset-0 bg-black/70 z-[1]" />
-
-      {/* 手势骨架线画布 */}
+      {/* 手势骨架线画布 - 隐藏但保留功能 */}
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 w-full h-full object-cover z-[2]"
+        className="absolute inset-0 w-full h-full object-cover z-[2] opacity-0 pointer-events-none"
         style={{ transform: 'scaleX(-1)' }}
       />
 
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center text-2xl text-emerald-500 animate-pulse bg-black/90 z-20 cinzel">
+        <div className="absolute inset-0 flex items-center justify-center text-2xl text-emerald-500 animate-pulse bg-black z-20 cinzel">
           SYSTEM INITIALIZING...
         </div>
       )}

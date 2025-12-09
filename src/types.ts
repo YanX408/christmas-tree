@@ -40,6 +40,39 @@ export interface TreeContextType {
   // 新增：缩放偏移量 (双手手势控制)
   zoomOffset: number;
   setZoomOffset: Dispatch<SetStateAction<number>>;
+
+  // 调试信息
+  debugInfo: GestureDebugInfo | null;
+  setDebugInfo: Dispatch<SetStateAction<GestureDebugInfo | null>>;
+}
+
+export interface GestureDebugInfo {
+  handsDetected: number;
+  gestures: Array<{
+    name: string;
+    score: number;
+  }>;
+  landmarks: Array<{
+    handIndex: number;
+    landmarks: Array<{ x: number; y: number; z: number }>;
+  }>;
+  fingerStates: {
+    indexExtended: boolean;
+    middleExtended: boolean;
+    ringExtended: boolean;
+    pinkyExtended: boolean;
+    thumbExtended: boolean;
+  } | null;
+  detectedActions: {
+    isPointing: boolean;
+    isPanning: boolean;
+    isZooming: boolean;
+    isPinching: boolean;
+    isFiveFingers: boolean;
+    isTwoFingers: boolean;
+  };
+  palmPosition: { x: number; y: number } | null;
+  movement: { dx: number; dy: number } | null;
 }
 
 export interface ParticleData {

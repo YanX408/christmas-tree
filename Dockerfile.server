@@ -1,0 +1,23 @@
+# 后端 API 服务器 Dockerfile
+FROM node:20-alpine
+
+WORKDIR /app
+
+# 复制 package 文件
+COPY package*.json ./
+
+# 安装依赖（只安装生产依赖）
+RUN npm ci --only=production
+
+# 复制服务器文件
+COPY server.js ./
+
+# 创建 photos 目录
+RUN mkdir -p public/photos && chmod 755 public/photos
+
+# 暴露端口
+EXPOSE 3001
+
+# 启动服务器
+CMD ["node", "server.js"]
+

@@ -160,6 +160,43 @@ const TreeSystem: React.FC = () => {
 
   // Staggered Loading State
   const [loadedCount, setLoadedCount] = useState(0);
+  const [photoFiles, setPhotoFiles] = useState<string[]>([]);
+
+  // 加载照片文件列表
+  useEffect(() => {
+    const loadPhotos = () => {
+      fetch('/photos/photos.json?' + Date.now()) // 添加时间戳避免缓存
+        .then(res => res.json())
+        .then((files: string[]) => {
+          // 按文件名排序（自然排序）
+          const sorted = files.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+          setPhotoFiles(sorted);
+        })
+        .catch(err => {
+          console.warn('无法加载 photos.json，使用默认列表', err);
+          // 如果配置文件不存在，尝试使用默认列表
+          setPhotoFiles([
+            "2025_12_1.jpg",
+            "2025_12_2.jpg",
+            "2025_12_3.jpg",
+            "2025_12_4.jpg",
+            "2025_12_5.jpg"
+          ]);
+        });
+    };
+
+    loadPhotos();
+
+    // 监听自定义事件，用于刷新照片列表
+    const handleRefresh = () => {
+      loadPhotos();
+    };
+    window.addEventListener('refreshPhotos', handleRefresh);
+
+    return () => {
+      window.removeEventListener('refreshPhotos', handleRefresh);
+    };
+  }, []);
 
   const [photoObjects, setPhotoObjects] = useState<{ id: string; url: string; ref: React.MutableRefObject<THREE.Group | null>; data: ParticleData; pos: THREE.Vector3; rot: THREE.Euler; scale: number; }[]>([]);
 
@@ -188,33 +225,33 @@ const TreeSystem: React.FC = () => {
     for (let i = 0; i < lightCount * 3; i++) lightChaos[i] = lSphere[i];
     for (let i = 0; i < lightCount; i++) { const i3 = i * 3; const t = i / lightCount; const h = t * 13; const coneRadius = (14 - h) * 0.48; const angle = t * Math.PI * 25; lightTree[i3] = Math.cos(angle) * coneRadius; lightTree[i3 + 1] = h - 6; lightTree[i3 + 2] = Math.sin(angle) * coneRadius; }
 
-    // 实际存在的照片文件列表
-    const photoFiles = [
-      "2024_06_1.jpg", "2024_07_1.jpg", "2024_07_2.jpg",
-      "2024_09_1.jpg", "2024_09_2.jpg", "2024_09_3.jpg",
-      "2024_09_4.jpg", "2024_09_5.jpg", "2024_09_6.jpg",
-      "2024_10_1.jpg", "2024_11_1.jpg", "2024_12_1.jpg",
-      "2024_12_2.jpg", "2024_12_3.jpg", "2025_01_1.jpg",
-      "2025_01_2.jpg", "2025_01_3.jpg", "2025_01_4.jpg",
-      "2025_01_5.jpg", "2025_01_6.jpg", "2025_01_7.jpg",
-      "2025_02_1.jpg", "2025_05_1.jpg", "2025_06_1.jpg",
-      "2025_06_2.jpg", "2025_06_3.jpg", "2025_09_1.jpg",
-      "2025_10_1.jpg", "2025_10_2.jpg", "2025_11_1.jpg",
-      "2025_11_2.jpg"
-    ];
+    // 使用从配置文件加载的照片列表（如果已加载），否则使用空数组
+    const files = photoFiles.length > 0 ? photoFiles : [];
 
-    // 按时间排序
-    photoFiles.sort();
-
-    const photoCount = photoFiles.length;
+    const photoCount = files.length;
     const photos: ParticleData[] = [];
 
+    // 从文件名中提取日期信息的辅助函数
+    const extractDateFromFileName = (fileName: string): { year: number; month: string } => {
+      // 尝试匹配 YYYY_MM 或 YYYY-MM 格式
+      const dateMatch1 = fileName.match(/(\d{4})[_-](\d{2})/);
+      if (dateMatch1) {
+        return { year: parseInt(dateMatch1[1]), month: dateMatch1[2] };
+      }
+      // 尝试匹配 YYYYMM 格式
+      const dateMatch2 = fileName.match(/(\d{4})(\d{2})/);
+      if (dateMatch2) {
+        return { year: parseInt(dateMatch2[1]), month: dateMatch2[2] };
+      }
+      // 如果无法提取，使用当前日期或默认值
+      const now = new Date();
+      return { year: now.getFullYear(), month: String(now.getMonth() + 1).padStart(2, '0') };
+    };
+
     for (let i = 0; i < photoCount; i++) {
-      const fileName = photoFiles[i];
-      // 解析文件名: YYYY_MM_ID.jpg
-      const parts = fileName.split('_');
-      const year = parseInt(parts[0]);
-      const month = parts[1]; // Keep as string "02"
+      const fileName = files[i];
+      // 尝试从文件名提取日期，如果无法提取则使用默认值
+      const { year, month } = extractDateFromFileName(fileName);
 
       // --- FORMED: Time Spiral Layout ---
       // 螺旋上升: i 越大 (越新)，h 越高
@@ -262,7 +299,7 @@ const TreeSystem: React.FC = () => {
       });
     }
     return { foliageData: { current: foliage, chaos: foliageChaos, tree: foliageTree, sizes }, photosData: photos, lightsData: { chaos: lightChaos, tree: lightTree, count: lightCount } };
-  }, []);
+  }, [photoFiles]);
 
   useEffect(() => {
     setPhotoObjects(photosData.map(p => ({ id: p.id, url: p.image!, ref: React.createRef(), data: p, pos: new THREE.Vector3(), rot: new THREE.Euler(), scale: p.scale })));

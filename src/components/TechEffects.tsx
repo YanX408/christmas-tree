@@ -33,13 +33,6 @@ const TechEffects: React.FC = () => {
           <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-cyan-400 animate-pulse" />
         </div>
 
-        {/* HUD 文字指示器 */}
-        <div className="absolute top-6 left-32 text-cyan-400/60 font-mono text-[10px] tracking-wider">
-          SYSTEM ACTIVE
-        </div>
-        <div className="absolute top-6 right-32 text-cyan-400/60 font-mono text-[10px] tracking-wider">
-          GESTURE TRACKING
-        </div>
       </div>
 
       {/* 网格背景效果 */}

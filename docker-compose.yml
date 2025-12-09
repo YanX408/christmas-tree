@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # 前端静态文件服务
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: christmas-tree-frontend
+    ports:
+      - "8080:80"
+    volumes:
+      # 如果需要持久化照片，可以挂载 volume
+      - ./public/photos:/usr/share/nginx/html/photos:ro
+    restart: unless-stopped
+    networks:
+      - christmas-tree-network
+
+  # 后端 API 服务器
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: christmas-tree-backend
+    ports:
+      - "3001:3001"
+    volumes:
+      # 挂载照片目录，用于上传和删除
+      - ./public/photos:/app/public/photos
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - christmas-tree-network
+
+networks:
+  christmas-tree-network:
+    driver: bridge
+

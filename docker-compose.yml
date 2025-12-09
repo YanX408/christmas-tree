@@ -8,6 +8,8 @@ services:
     container_name: christmas-tree-frontend
     ports:
       - "8080:80"
+    volumes:
+      - /opt/christmas-tree/public/photos:/usr/share/nginx/html/photos:ro
     restart: unless-stopped
 
   backend:

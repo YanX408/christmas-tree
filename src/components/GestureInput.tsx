@@ -5,8 +5,32 @@ import { TreeContext, TreeContextType, GestureDebugInfo } from '../types';
 const GestureInput: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset, setDebugInfo } = useContext(TreeContext) as TreeContextType;
+  // ---- 手势配置 ----
+  const GESTURE_THRESHOLDS: Record<string, number> = {
+    Victory: 0.6,
+    Thumb_Up: 0.55, // 略降阈值，加快触发
+    Open_Palm: 0.5,
+    Closed_Fist: 0.45 // 降低阈值，提升识别稳定性
+  };
+  const GESTURE_HOLD_FRAMES: Record<string, number> = {
+    Victory: 6,
+    Thumb_Up: 4, // 减少持有帧数，提升响应速度
+    Open_Palm: 12,
+    Closed_Fist: 6 // 缩短握拳持有帧数，加快回树形
+  };
+  const SWIPE_DX = 0.02;
+  const COOLDOWNS = {
+    victory: 1.0,
+    thumb: 1.0,
+    swipe: 0.8,
+    click: 2.0
+  };
+  const DWELL_THRESHOLD = 1.2;
+
+  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset, setDebugInfo, setSelectedPhotoUrl } = useContext(TreeContext) as TreeContextType;
 
   const stateRef = useRef(appState);
   const photoRef = useRef(selectedPhotoUrl);
@@ -25,7 +49,6 @@ const GestureInput: React.FC = () => {
 
   const dwellTimerRef = useRef<number>(0);
   const lastFrameTimeRef = useRef<number>(0);
-  const clickCooldownRef = useRef<number>(0);
 
   // 记录上一帧手掌中心位置，用于计算位移差
   const lastPalmPos = useRef<{ x: number, y: number } | null>(null);
@@ -33,6 +56,17 @@ const GestureInput: React.FC = () => {
   const lastHandDistance = useRef<number | null>(null);
   // 记录上一帧单手尺寸，用于单手缩放
   const lastHandScale = useRef<number | null>(null);
+  // shaka 检测缓存
+  const shakaState = useRef<{ isShaka: boolean }>({ isShaka: false });
+  // 记录随机照片列表
+  const photoListRef = useRef<string[]>([]);
+  const loadingPhotosRef = useRef(false);
+  const grabCooldownRef = useRef(0);
+  const lastRandomPhotoRef = useRef<string | null>(null);
+  const swipeCooldownRef = useRef(0);
+  const thumbCooldownRef = useRef(0);
+  const gestureHoldRef = useRef<{ name: string | null; count: number }>({ name: null, count: 0 });
+  const clickCooldownRef = useRef<number>(0);
 
   const isExtended = (landmarks: NormalizedLandmark[], tipIdx: number, mcpIdx: number, wrist: NormalizedLandmark) => {
     const tipDist = Math.hypot(landmarks[tipIdx].x - wrist.x, landmarks[tipIdx].y - wrist.y);
@@ -47,8 +81,38 @@ const GestureInput: React.FC = () => {
     return distance < 0.05; // Threshold for pinch
   };
 
+  // Shaka: 拇指、小指伸展，其余收起
+  const isShaka = (landmarks: NormalizedLandmark[]) => {
+    const wrist = landmarks[0];
+    const thumbExtended = isExtended(landmarks, 4, 2, wrist);
+    const indexExtended = isExtended(landmarks, 8, 5, wrist);
+    const middleExtended = isExtended(landmarks, 12, 9, wrist);
+    const ringExtended = isExtended(landmarks, 16, 13, wrist);
+    const pinkyExtended = isExtended(landmarks, 20, 17, wrist);
+    return thumbExtended && pinkyExtended && !indexExtended && !middleExtended && !ringExtended;
+  };
+
   useEffect(() => {
     let mounted = true;
+    // 预加载照片列表，供“抓取”动作随机展示
+    const preloadPhotos = async () => {
+      if (loadingPhotosRef.current || photoListRef.current.length > 0) return;
+      loadingPhotosRef.current = true;
+      try {
+        const res = await fetch('/photos/photos.json?' + Date.now());
+        if (res.ok) {
+          const files: string[] = await res.json();
+          photoListRef.current = files;
+        }
+      } catch (err) {
+        console.warn('加载照片列表失败，将使用默认列表', err);
+        photoListRef.current = ["2025_12_1.jpg", "2025_12_2.jpg", "2025_12_3.jpg", "2025_12_4.jpg", "2025_12_5.jpg"];
+      } finally {
+        loadingPhotosRef.current = false;
+      }
+    };
+    preloadPhotos();
+
     const setupMediaPipe = async () => {
       try {
         // 1. Start Camera Access (Parallel)
@@ -91,9 +155,21 @@ const GestureInput: React.FC = () => {
               canvasRef.current.width = videoRef.current.videoWidth;
               canvasRef.current.height = videoRef.current.videoHeight;
             }
+            if (previewCanvasRef.current && videoRef.current) {
+              previewCanvasRef.current.width = videoRef.current.videoWidth;
+              previewCanvasRef.current.height = videoRef.current.videoHeight;
+            }
             setLoading(false);
             lastFrameTimeRef.current = Date.now();
             predictWebcam();
+          };
+        }
+
+        // 同步一个可见的预览视频，展示在右上角
+        if (previewRef.current) {
+          previewRef.current.srcObject = stream;
+          previewRef.current.onloadedmetadata = () => {
+            previewRef.current?.play();
           };
         }
       } catch (error) {
@@ -129,6 +205,18 @@ const GestureInput: React.FC = () => {
     const now = Date.now();
     const delta = (now - lastFrameTimeRef.current) / 1000;
     lastFrameTimeRef.current = now;
+    if (grabCooldownRef.current > 0) {
+      grabCooldownRef.current = Math.max(0, grabCooldownRef.current - delta);
+    }
+    if (swipeCooldownRef.current > 0) {
+      swipeCooldownRef.current = Math.max(0, swipeCooldownRef.current - delta);
+    }
+    if (thumbCooldownRef.current > 0) {
+      thumbCooldownRef.current = Math.max(0, thumbCooldownRef.current - delta);
+    }
+    if (clickCooldownRef.current > 0) {
+      clickCooldownRef.current = Math.max(0, clickCooldownRef.current - delta);
+    }
 
     const currentState = stateRef.current;
     const isPhotoOpen = !!photoRef.current;
@@ -142,6 +230,35 @@ const GestureInput: React.FC = () => {
         lastVideoTime.current = video.currentTime;
         const results = recognizer.recognizeForVideo(video, Date.now());
         const ctx = canvas.getContext("2d");
+        const previewCtx = previewCanvasRef.current?.getContext("2d") || null;
+        const gestureCandidates = results.gestures?.flat() || [];
+        const getThreshold = (name: string, fallback = 0.6) => GESTURE_THRESHOLDS[name] ?? fallback;
+        const hasGesture = (name: string) =>
+          gestureCandidates.some(g => g.categoryName === name && g.score >= getThreshold(name));
+        const isVictoryGesture = hasGesture('Victory');
+        const isThumbUpGesture = hasGesture('Thumb_Up');
+        const primaryGesture = gestureCandidates[0] || null;
+
+        const updateHold = (name: string | null, score: number) => {
+          if (!name) {
+            gestureHoldRef.current = { name: null, count: 0 };
+            return;
+          }
+          const th = getThreshold(name, 0.5);
+          if (score >= th) {
+            if (gestureHoldRef.current.name === name) {
+              gestureHoldRef.current = { ...gestureHoldRef.current, count: gestureHoldRef.current.count + 1 };
+            } else {
+              gestureHoldRef.current = { name, count: 1 };
+            }
+          } else if (gestureHoldRef.current.name === name) {
+            gestureHoldRef.current = { name: null, count: 0 };
+          }
+        };
+
+        const meetsHold = (name: string) =>
+          gestureHoldRef.current.name === name &&
+          gestureHoldRef.current.count >= (GESTURE_HOLD_FRAMES[name] ?? 0);
 
         let detectedColor = "rgba(0, 255, 255, 0.2)"; // 默认霓虹青色，降低透明度
         let currentPointer = null;
@@ -158,6 +275,8 @@ const GestureInput: React.FC = () => {
         let isFiveFingers = false;
         let isTwoFingers = false;
         let pinch = false;
+        let shaka = false;
+        let isAllFolded = false;
         
         // 移动信息（用于调试）
         let movementDx = 0;
@@ -173,10 +292,15 @@ const GestureInput: React.FC = () => {
           pinkyExtended = isExtended(landmarks, 20, 17, wrist);
           thumbExtended = isExtended(landmarks, 4, 2, wrist);
 
+          shaka = isShaka(landmarks);
+          shakaState.current.isShaka = shaka;
+
           isPointing = indexExtended && !middleExtended && !ringExtended && !pinkyExtended;
           isFiveFingers = indexExtended && middleExtended && ringExtended && pinkyExtended && thumbExtended;
-          // 两指检测（食指+中指伸出，无名指和小指收拢）- 用于平移
-          isTwoFingers = indexExtended && middleExtended && !ringExtended && !pinkyExtended;
+          // 平移手势改用 Shaka（保留 isTwoFingers 字段仅用于调试显示）
+          isTwoFingers = shaka;
+          // 全收拳兜底（无手指伸展）
+          isAllFolded = !indexExtended && !middleExtended && !ringExtended && !pinkyExtended && !thumbExtended;
 
           // 全局更新手掌位置 (无论什么手势，只要有手就追踪，防止 flickering 导致 dx 丢失)
           const palmX = (landmarks[0].x + landmarks[5].x + landmarks[17].x) / 3;
@@ -194,6 +318,13 @@ const GestureInput: React.FC = () => {
 
           // Relaxed movement threshold to 0.005 (was 0.003) to improve dwell stability
           const isMoving = Math.abs(dx) > 0.005 || Math.abs(dy) > 0.005;
+
+          // 更新当前主手势的持有计数（用于帧稳定）
+          if (primaryGesture) {
+            updateHold(primaryGesture.categoryName, primaryGesture.score);
+          } else {
+            updateHold(null, 0);
+          }
 
           // 如果是单指指向，打断"蓄力"状态
           if (isPointing) {
@@ -224,16 +355,14 @@ const GestureInput: React.FC = () => {
               lastHandScale.current = null;
             }
 
-            // 1.2 两指平移 (任何状态下都可以，但未打开照片时)
-            // 圣诞树树根直接跟随两指中点位置
-            if (!isPhotoOpen && isTwoFingers) {
+            // 1.2 Shaka 平移 (任何状态下都可以，但未打开照片时)
+            // 圣诞树树根直接跟随手掌中心位置（更稳）
+            if (!isPhotoOpen && shaka) {
               isPanning = true;
 
-              // 计算食指和中指尖端的中点
-              const indexTip = landmarks[8];
-              const middleTip = landmarks[12];
-              const centerX = (indexTip.x + middleTip.x) / 2;
-              const centerY = (indexTip.y + middleTip.y) / 2;
+              // 使用手掌中心作为平移点
+              const centerX = palmX;
+              const centerY = palmY;
 
               // 将归一化坐标 (0-1) 转换为以屏幕中心为原点的坐标 (-0.5 到 0.5)
               // 然后乘以系数映射到世界坐标
@@ -256,119 +385,106 @@ const GestureInput: React.FC = () => {
           // --- 逻辑分支 2: 单指光标 & 点击 (Dwell or Pinch) ---
           pinch = isPinching(landmarks);
 
-          // 确保只有单指指向时才能点击，排除五指张开、两指等其他手势
-          if (!isPanning && !isFiveFingers && !isTwoFingers && currentState === 'CHAOS' && (isPointing || pinch)) {
+          // Victory 单独放行，指向/捏合仍需排除五指/两指/ Shaka
+          if (
+            !isPanning &&
+            currentState === 'CHAOS' &&
+            (
+              isVictoryGesture ||
+              (!isFiveFingers && !isTwoFingers && (isPointing || pinch))
+            )
+          ) {
             const indexTip = landmarks[8];
             currentPointer = { x: 1.0 - indexTip.x, y: indexTip.y };
 
-            // Pinch Click (Immediate)
-            if (pinch) {
-              if (dwellTimerRef.current === 0) { // Prevent rapid fire
-                setClickTrigger(Date.now());
-                detectedColor = "rgba(0, 255, 255, 1.0)"; // 霓虹青色点击
-                dwellTimerRef.current = -0.5; // Cooldown
-              } else if (dwellTimerRef.current < 0) {
-                dwellTimerRef.current += delta; // Recover from cooldown
-                if (dwellTimerRef.current > 0) dwellTimerRef.current = 0;
+          // Victory 手势 -> 随机照片展示
+          if (isVictoryGesture && meetsHold('Victory') && grabCooldownRef.current === 0) {
+            if (photoListRef.current.length > 0) {
+              const list = photoListRef.current;
+              const len = list.length;
+              const pickIndex = () => {
+                if (window.crypto?.getRandomValues) {
+                  const buf = new Uint32Array(1);
+                  window.crypto.getRandomValues(buf);
+                  return buf[0] % len;
+                }
+                return Math.floor(Math.random() * len);
+              };
+              let idx = pickIndex();
+              if (len > 1 && lastRandomPhotoRef.current === list[idx]) {
+                idx = (idx + 1) % len; // 避免连续重复
               }
+              const chosen = list[idx];
+              lastRandomPhotoRef.current = chosen;
+              setSelectedPhotoUrl(`/photos/${chosen}`);
+              grabCooldownRef.current = COOLDOWNS.victory;
             }
-            // Dwell Click (Hover)
-            else {
-              dwellTimerRef.current += delta;
-              const DWELL_THRESHOLD = 1.2; // 增加到 1.2 秒，防止误触
-              const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
-              setHoverProgress(progress);
+            dwellTimerRef.current = 0;
+            setHoverProgress(0);
+            detectedColor = "rgba(0, 255, 255, 1.0)";
+          }
+          // Dwell Click (Hover)
+          else {
+            dwellTimerRef.current += delta;
+            const progress = Math.min(dwellTimerRef.current / DWELL_THRESHOLD, 1.0);
+            setHoverProgress(progress);
 
-              if (dwellTimerRef.current >= DWELL_THRESHOLD) {
-                setClickTrigger(Date.now());
-                clickCooldownRef.current = 2.0; // 增加冷却到 2 秒
-                dwellTimerRef.current = 0;
-                setHoverProgress(0);
-                detectedColor = "rgba(100, 255, 255, 1.0)"; // 亮青色完成
-              } else {
-                detectedColor = "rgba(0, 255, 255, 0.8)"; // 霓虹青色悬停
-              }
+            if (dwellTimerRef.current >= DWELL_THRESHOLD) {
+              setClickTrigger(Date.now());
+              clickCooldownRef.current = COOLDOWNS.click;
+              dwellTimerRef.current = 0;
+              setHoverProgress(0);
+              detectedColor = "rgba(100, 255, 255, 1.0)"; // 亮青色完成
+            } else {
+              detectedColor = "rgba(0, 255, 255, 0.8)"; // 霓虹青色悬停
             }
+          }
           } else if (!isPanning) {
             dwellTimerRef.current = 0;
             setHoverProgress(0);
           }
 
           // --- 逻辑分支 3: 状态切换 & 旋转控制 ---
-          if (!isPointing && !isPanning && !isPhotoOpen && results.gestures.length > 0) {
-            const gesture = results.gestures[0][0];
-            const name = gesture.categoryName;
-            const score = gesture.score;
-
-            if (score > 0.6) {
-              // 状态切换逻辑（简化版）
-              // 1. FORMED -> CHAOS: 五指张开(Open_Palm)静止即可炸开
-              // 2. CHAOS -> FORMED: 握拳(Closed_Fist)
-
-              let targetState = null;
-              if (currentState === 'FORMED' && name === 'Open_Palm' && !isMoving) {
-                // 五指张开且静止 -> 炸开（不再需要先握拳）
-                targetState = 'CHAOS';
-              } else if (name === 'Closed_Fist') {
-                targetState = 'FORMED';
-              }
-
-              if (targetState) {
-                if (gestureStreak.current.name === name) {
-                  gestureStreak.current.count++;
-                } else {
-                  gestureStreak.current = { ...gestureStreak.current, name: name, count: 1 };
-                }
-              } else {
-                gestureStreak.current = { ...gestureStreak.current, name: null, count: 0 };
-              }
-
-              // 阈值调整：
-              // Closed_Fist (收拢) 保持 10帧
-              // Open_Palm (炸开) 保持 15帧（静止约0.4秒）
-              const threshold = name === 'Open_Palm' ? 15 : 10;
-
-              if (gestureStreak.current.count > threshold) {
-                if (name === "Open_Palm" && currentState === 'FORMED') {
-                  setState("CHAOS");
-                }
-                else if (name === "Closed_Fist") {
-                  setState("FORMED");
-                }
-                gestureStreak.current = { ...gestureStreak.current, name: null, count: 0 };
+          if (!isVictoryGesture && !isPointing && !isPanning) {
+            if (primaryGesture) {
+              const name = primaryGesture.categoryName;
+              if (name === 'Open_Palm' && currentState === 'FORMED' && !isMoving && meetsHold('Open_Palm')) {
+                setState("CHAOS");
+                gestureHoldRef.current = { name: null, count: 0 };
+              } else if (name === 'Closed_Fist' && (meetsHold('Closed_Fist') || primaryGesture.score >= getThreshold('Closed_Fist', 0.45) || isAllFolded)) {
+                // 模型握拳或达到分数即触发回树
+                setState("FORMED");
+                setSelectedPhotoUrl(null);
+                gestureHoldRef.current = { name: null, count: 0 };
               }
             } else {
-              gestureStreak.current = { ...gestureStreak.current, name: null, count: 0 };
-            }
-
-            // 旋转控制 (FORMED 模式)
-            if (currentState === 'FORMED') {
-              // 物理模拟：手势加速 + 自动衰减
-              // 使用 isFiveFingers (基于 landmarks) 响应更灵敏
-              if (isFiveFingers) {
-                if (Math.abs(dx) > 0.001) { // 只要有微小移动就计算加速度
-                  // 累加加速度
-                  // 修正：反转方向 (prev - dx)
-                  setRotationBoost(prev => {
-                    const newBoost = prev - dx * 8.0; // 增加灵敏度 5.0 -> 8.0, 方向反转
-                    return Math.max(Math.min(newBoost, 3.0), -3.0); // 稍微放宽上限
-                  });
-                  detectedColor = "rgba(0, 200, 255, 0.9)"; // 霓虹蓝青色旋转
-
-                  // 关键：如果正在旋转（移动），且上一个状态不是拳头，则打断"蓄力"状态
-                  // 如果是拳头，保留状态以便触发炸开
-                  if (gestureStreak.current.lastStable !== 'Closed_Fist') {
-                    gestureStreak.current.lastStable = null;
-                  }
-                }
+              // 模型未给分类时，使用五指全收兜底
+              if (isAllFolded) {
+                setState("FORMED");
+                setSelectedPhotoUrl(null);
+                gestureHoldRef.current = { name: null, count: 0 };
               } else {
-                // 无手势时，阻尼衰减
-                setRotationBoost(prev => {
-                  const decayed = prev * 0.95;
-                  if (Math.abs(decayed) < 0.001) return 0;
-                  return decayed;
-                });
+                gestureHoldRef.current = { name: null, count: 0 };
               }
+            }
+          }
+
+          // 旋转控制 (FORMED 模式)
+          if (currentState === 'FORMED') {
+            if (isFiveFingers) {
+              if (Math.abs(dx) > 0.001) {
+                setRotationBoost(prev => {
+                  const newBoost = prev - dx * 8.0;
+                  return Math.max(Math.min(newBoost, 3.0), -3.0);
+                });
+                detectedColor = "rgba(0, 200, 255, 0.9)";
+              }
+            } else {
+              setRotationBoost(prev => {
+                const decayed = prev * 0.95;
+                if (Math.abs(decayed) < 0.001) return 0;
+                return decayed;
+              });
             }
           }
 
@@ -418,6 +534,41 @@ const GestureInput: React.FC = () => {
         }
 
         setPointer(currentPointer);
+
+        // 照片浏览模式下，张开手左右划动切换照片
+        if (isPhotoOpen && isFiveFingers && swipeCooldownRef.current === 0) {
+          const list = photoListRef.current;
+          if (list.length > 0) {
+            const current = photoRef.current || '';
+            const currentName = current.replace('/photos/', '');
+            const idx = Math.max(0, list.findIndex(f => f === currentName));
+
+            if (movementDx > SWIPE_DX) {
+              // 向右划 -> 下一张
+              const next = list[(idx + 1) % list.length];
+              lastRandomPhotoRef.current = next;
+              setSelectedPhotoUrl(`/photos/${next}`);
+              swipeCooldownRef.current = COOLDOWNS.swipe;
+            } else if (movementDx < -SWIPE_DX) {
+              // 向左划 -> 上一张
+              const prev = list[(idx - 1 + list.length) % list.length];
+              lastRandomPhotoRef.current = prev;
+              setSelectedPhotoUrl(`/photos/${prev}`);
+              swipeCooldownRef.current = COOLDOWNS.swipe;
+            }
+          }
+        }
+
+        // 点赞手势：关闭照片并切回炸开形态
+        if (isThumbUpGesture && thumbCooldownRef.current === 0) {
+          const thumbActive = meetsHold('Thumb_Up') || (primaryGesture?.categoryName === 'Thumb_Up' && primaryGesture.score >= getThreshold('Thumb_Up', 0.55));
+          if (thumbActive) {
+            setSelectedPhotoUrl(null);
+            setState("CHAOS");
+            thumbCooldownRef.current = COOLDOWNS.thumb;
+            gestureHoldRef.current = { name: null, count: 0 }; // 清空持有，避免阻塞后续识别
+          }
+        }
 
         // 收集调试信息
         if (setDebugInfo) {
@@ -479,6 +630,25 @@ const GestureInput: React.FC = () => {
           //   }
           // }
         }
+
+        // 绘制右上角预览中的手势连线
+        if (previewCtx) {
+          const canvasW = previewCanvasRef.current!.width;
+          const canvasH = previewCanvasRef.current!.height;
+          previewCtx.save();
+          previewCtx.clearRect(0, 0, canvasW, canvasH);
+          // 镜像以匹配视频的 scaleX(-1)
+          previewCtx.translate(canvasW, 0);
+          previewCtx.scale(-1, 1);
+          if (results.landmarks && results.landmarks.length > 0) {
+            const drawingUtils = new DrawingUtils(previewCtx);
+            for (const lm of results.landmarks) {
+              drawingUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, { color: "rgba(255, 255, 255, 0.9)", lineWidth: 2 });
+              drawingUtils.drawLandmarks(lm, { color: "rgba(255, 215, 0, 0.9)", lineWidth: 1, radius: 3 });
+            }
+          }
+          previewCtx.restore();
+        }
       }
     }
     requestRef.current = requestAnimationFrame(predictWebcam);
@@ -509,6 +679,25 @@ const GestureInput: React.FC = () => {
           SYSTEM INITIALIZING...
         </div>
       )}
+
+      {/* 右上角摄像头预览区域 */}
+      <div className="absolute top-4 right-4 w-[280px] aspect-video z-30 pointer-events-none">
+        <div className="relative w-full h-full border-2 border-red-500/80 rounded-lg overflow-hidden shadow-[0_0_20px_rgba(239,68,68,0.45)] bg-black/60 backdrop-blur-sm">
+          <video
+            ref={previewRef}
+            className="w-full h-full object-cover opacity-80"
+            playsInline
+            muted
+            autoPlay
+            style={{ transform: 'scaleX(-1)' }}
+          />
+          <canvas
+            ref={previewCanvasRef}
+            className="absolute inset-0 w-full h-full"
+          />
+          <div className="absolute inset-0 border border-white/10 pointer-events-none" />
+        </div>
+      </div>
     </div>
   );
 };

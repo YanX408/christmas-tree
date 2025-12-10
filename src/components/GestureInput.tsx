@@ -263,7 +263,6 @@ const GestureInput: React.FC = () => {
         let detectedColor = "rgba(0, 255, 255, 0.2)"; // 默认霓虹青色，降低透明度
         let currentPointer = null;
         let isPointing = false;
-        let isPanning = false;
         let isZooming = false;
         
         // 手指状态（用于调试）
@@ -358,8 +357,6 @@ const GestureInput: React.FC = () => {
             // 1.2 Shaka 平移 (任何状态下都可以，但未打开照片时)
             // 圣诞树树根直接跟随手掌中心位置（更稳）
             if (!isPhotoOpen && shaka) {
-              isPanning = true;
-
               // 使用手掌中心作为平移点
               const centerX = palmX;
               const centerY = palmY;
@@ -387,7 +384,6 @@ const GestureInput: React.FC = () => {
 
           // Victory 单独放行，指向/捏合仍需排除五指/两指/ Shaka
           if (
-            !isPanning &&
             currentState === 'CHAOS' &&
             (
               isVictoryGesture ||
@@ -439,13 +435,13 @@ const GestureInput: React.FC = () => {
               detectedColor = "rgba(0, 255, 255, 0.8)"; // 霓虹青色悬停
             }
           }
-          } else if (!isPanning) {
+          } else {
             dwellTimerRef.current = 0;
             setHoverProgress(0);
           }
 
           // --- 逻辑分支 3: 状态切换 & 旋转控制 ---
-          if (!isVictoryGesture && !isPointing && !isPanning) {
+          if (!isVictoryGesture && !isPointing) {
             if (primaryGesture) {
               const name = primaryGesture.categoryName;
               if (name === 'Open_Palm' && currentState === 'FORMED' && !isMoving && meetsHold('Open_Palm')) {
@@ -591,7 +587,7 @@ const GestureInput: React.FC = () => {
             } : null,
             detectedActions: {
               isPointing,
-              isPanning,
+              isPanning: false,
               isZooming,
               isPinching: pinch,
               isFiveFingers,
@@ -605,30 +601,6 @@ const GestureInput: React.FC = () => {
 
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          // 注释：暂时隐藏手部骨骼线，保持简洁
-          // if (results.landmarks && results.landmarks.length > 0) {
-          //   const landmarks = results.landmarks[0];
-          //   const drawingUtils = new DrawingUtils(ctx);
-
-          //   for (const landmarks of results.landmarks) {
-          //     drawingUtils.drawConnectors(landmarks, GestureRecognizer.HAND_CONNECTIONS, { color: detectedColor, lineWidth: 1 });
-          //     drawingUtils.drawLandmarks(landmarks, { color: "rgba(0, 255, 255, 0.3)", lineWidth: 0.5, radius: 1.5 });
-          //   }
-
-          //   if (currentPointer) {
-          //     const indexTip = landmarks[8];
-          //     ctx.beginPath();
-          //     ctx.arc(indexTip.x * canvas.width, indexTip.y * canvas.height, 6, 0, 2 * Math.PI);
-          //     ctx.strokeStyle = "#00FFFF";
-          //     ctx.lineWidth = 2;
-          //     ctx.stroke();
-          //     // 添加轻微发光效果
-          //     ctx.shadowBlur = 8;
-          //     ctx.shadowColor = "#00FFFF";
-          //     ctx.stroke();
-          //     ctx.shadowBlur = 0;
-          //   }
-          // }
         }
 
         // 绘制右上角预览中的手势连线

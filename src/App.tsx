@@ -311,6 +311,8 @@ const App: React.FC = () => {
     const [panOffset, setPanOffset] = useState<{ x: number, y: number }>({ x: 0, y: 0 });
     const [zoomOffset, setZoomOffset] = useState<number>(0);
     const [debugInfo, setDebugInfo] = useState<GestureDebugInfo | null>(null);
+    const [ornamentTheme, setOrnamentTheme] = useState<number>(0);
+    const [lightPulse, setLightPulse] = useState<number>(0);
 
     return (
         <TreeContext.Provider value={{
@@ -324,7 +326,9 @@ const App: React.FC = () => {
             panOffset, setPanOffset,
             rotationBoost, setRotationBoost,
             zoomOffset, setZoomOffset,
-            debugInfo, setDebugInfo
+            debugInfo, setDebugInfo,
+            ornamentTheme, setOrnamentTheme,
+            lightPulse, setLightPulse
         }}>
             <AppContent />
         </TreeContext.Provider>

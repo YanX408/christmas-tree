@@ -26,11 +26,13 @@ const GestureInput: React.FC = () => {
     victory: 1.0,
     thumb: 1.0,
     swipe: 0.8,
-    click: 2.0
+    click: 2.0,
+    pulse: 1.2,
+    theme: 0.9
   };
   const DWELL_THRESHOLD = 1.2;
 
-  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset, setDebugInfo, setSelectedPhotoUrl } = useContext(TreeContext) as TreeContextType;
+  const { setState, setRotationSpeed, setRotationBoost, setPointer, state: appState, setHoverProgress, setClickTrigger, selectedPhotoUrl, setPanOffset, setZoomOffset, setDebugInfo, setSelectedPhotoUrl, setLightPulse, setOrnamentTheme } = useContext(TreeContext) as TreeContextType;
 
   const stateRef = useRef(appState);
   const photoRef = useRef(selectedPhotoUrl);
@@ -62,11 +64,16 @@ const GestureInput: React.FC = () => {
   const photoListRef = useRef<string[]>([]);
   const loadingPhotosRef = useRef(false);
   const grabCooldownRef = useRef(0);
+  const victoryPulseCooldownRef = useRef(0);
   const lastRandomPhotoRef = useRef<string | null>(null);
   const swipeCooldownRef = useRef(0);
   const thumbCooldownRef = useRef(0);
   const gestureHoldRef = useRef<{ name: string | null; count: number }>({ name: null, count: 0 });
   const clickCooldownRef = useRef<number>(0);
+  const themeCooldownRef = useRef<number>(0);
+
+  const THEME_FLICK_DX = 0.004; // 再降低阈值，轻微左右摆动即可触发
+  const ORNAMENT_THEME_COUNT = 3;
 
   const isExtended = (landmarks: NormalizedLandmark[], tipIdx: number, mcpIdx: number, wrist: NormalizedLandmark) => {
     const tipDist = Math.hypot(landmarks[tipIdx].x - wrist.x, landmarks[tipIdx].y - wrist.y);
@@ -208,6 +215,9 @@ const GestureInput: React.FC = () => {
     if (grabCooldownRef.current > 0) {
       grabCooldownRef.current = Math.max(0, grabCooldownRef.current - delta);
     }
+    if (victoryPulseCooldownRef.current > 0) {
+      victoryPulseCooldownRef.current = Math.max(0, victoryPulseCooldownRef.current - delta);
+    }
     if (swipeCooldownRef.current > 0) {
       swipeCooldownRef.current = Math.max(0, swipeCooldownRef.current - delta);
     }
@@ -216,6 +226,9 @@ const GestureInput: React.FC = () => {
     }
     if (clickCooldownRef.current > 0) {
       clickCooldownRef.current = Math.max(0, clickCooldownRef.current - delta);
+    }
+    if (themeCooldownRef.current > 0) {
+      themeCooldownRef.current = Math.max(0, themeCooldownRef.current - delta);
     }
 
     const currentState = stateRef.current;
@@ -465,6 +478,33 @@ const GestureInput: React.FC = () => {
             }
           }
 
+          // --- FORMED: 胜利脉冲与拇指主题切换 ---
+          if (currentState === 'FORMED') {
+            // Victory 长按 -> 灯光脉冲 + 加速
+            if (isVictoryGesture && meetsHold('Victory') && victoryPulseCooldownRef.current === 0) {
+              // 更强的脉冲与旋转加速
+              setRotationBoost(prev => Math.max(prev, 2.0));
+              setLightPulse(Date.now());
+              victoryPulseCooldownRef.current = COOLDOWNS.pulse;
+              detectedColor = "rgba(255, 80, 80, 1.0)"; // 圣诞红脉冲提示
+            }
+
+            // 拇指点赞 + 左右快速移动 -> 装饰主题切换
+            if (
+              isThumbUpGesture &&
+              themeCooldownRef.current === 0 &&
+              Math.abs(movementDx) > THEME_FLICK_DX
+            ) {
+              setOrnamentTheme(prev => {
+                const delta = movementDx > 0 ? 1 : -1;
+                const next = (prev + delta + ORNAMENT_THEME_COUNT) % ORNAMENT_THEME_COUNT;
+                return next;
+              });
+              themeCooldownRef.current = COOLDOWNS.theme;
+              detectedColor = "rgba(255, 180, 120, 0.95)";
+            }
+          }
+
           // 旋转控制 (FORMED 模式)
           if (currentState === 'FORMED') {
             if (isFiveFingers) {
@@ -559,8 +599,11 @@ const GestureInput: React.FC = () => {
         if (isThumbUpGesture && thumbCooldownRef.current === 0) {
           const thumbActive = meetsHold('Thumb_Up') || (primaryGesture?.categoryName === 'Thumb_Up' && primaryGesture.score >= getThreshold('Thumb_Up', 0.55));
           if (thumbActive) {
+            // 仅用于关闭照片；不再强制触发展开
             setSelectedPhotoUrl(null);
-            setState("CHAOS");
+            if (currentState === 'CHAOS') {
+              setState("CHAOS");
+            }
             thumbCooldownRef.current = COOLDOWNS.thumb;
             gestureHoldRef.current = { name: null, count: 0 }; // 清空持有，避免阻塞后续识别
           }

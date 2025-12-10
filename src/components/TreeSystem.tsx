@@ -145,7 +145,7 @@ const PolaroidPhoto: React.FC<{ url: string; position: THREE.Vector3; rotation: 
 
 // --- Main Tree System ---
 const TreeSystem: React.FC = () => {
-  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, rotationBoost, pointer, clickTrigger, setSelectedPhotoUrl, selectedPhotoUrl, panOffset, ornamentTheme, lightPulse } = useContext(TreeContext) as TreeContextType;
   const { camera, raycaster } = useThree();
   const pointsRef = useRef<THREE.Points>(null);
   const lightsRef = useRef<THREE.InstancedMesh>(null);
@@ -161,6 +161,36 @@ const TreeSystem: React.FC = () => {
   // Staggered Loading State
   const [loadedCount, setLoadedCount] = useState(0);
   const [photoFiles, setPhotoFiles] = useState<string[]>([]);
+  const bokehPositions = useMemo(() => {
+    const count = 80;
+    const arr = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      // 环绕树体的柔光颗粒
+      const radius = 8 + Math.random() * 5;
+      const theta = Math.random() * Math.PI * 2;
+      const y = -6 + Math.random() * 14;
+      const x = Math.cos(theta) * radius;
+      const z = Math.sin(theta) * radius;
+      arr[i * 3] = x;
+      arr[i * 3 + 1] = y;
+      arr[i * 3 + 2] = z;
+    }
+    return arr;
+  }, []);
+
+  const lightThemes = useMemo(() => ([
+    { color: '#ffddaa', emissive: '#ffbb00', base: 3.0 },
+    { color: '#b7e9ff', emissive: '#6fd6ff', base: 2.6 },
+    { color: '#ffd8f6', emissive: '#ff8bd1', base: 2.8 }
+  ]), []);
+  const activeLightTheme = lightThemes[((ornamentTheme % lightThemes.length) + lightThemes.length) % lightThemes.length];
+
+  useEffect(() => {
+    if (!lightsRef.current) return;
+    const mat = lightsRef.current.material as THREE.MeshStandardMaterial;
+    mat.color.set(activeLightTheme.color);
+    mat.emissive.set(activeLightTheme.emissive);
+  }, [activeLightTheme]);
 
   // 加载照片文件列表
   useEffect(() => {
@@ -417,6 +447,26 @@ const TreeSystem: React.FC = () => {
       pointsRef.current.geometry.attributes.position.needsUpdate = true;
     }
     if (lightsRef.current) {
+      const mat = lightsRef.current.material as THREE.MeshStandardMaterial;
+      const pulseElapsed = lightPulse > 0 ? (Date.now() - lightPulse) / 1000 : Infinity;
+      // 延长持续时间并提高峰值亮度
+      const pulseDuration = 1.5;
+      const pulseStrength = 4.0;
+      const isPulsing = pulseElapsed < pulseDuration;
+      const pulse = isPulsing
+        ? (1 - pulseElapsed / pulseDuration) * pulseStrength
+        : 0;
+
+      // 脉冲时临时切换为圣诞红
+      if (isPulsing) {
+        mat.color.set('#ff4d4d');
+        mat.emissive.set('#ff1a1a');
+      } else {
+        mat.color.set(activeLightTheme.color);
+        mat.emissive.set(activeLightTheme.emissive);
+      }
+
+      mat.emissiveIntensity = activeLightTheme.base + Math.max(0, pulse);
       const dummy = new THREE.Object3D();
       for (let i = 0; i < lightsData.count; i++) {
         const i3 = i * 3; const cx = lightsData.chaos[i3]; const cy = lightsData.chaos[i3 + 1]; const cz = lightsData.chaos[i3 + 2]; const tx = lightsData.tree[i3]; const ty = lightsData.tree[i3 + 1]; const tz = lightsData.tree[i3 + 2];
@@ -463,6 +513,20 @@ const TreeSystem: React.FC = () => {
       <mesh ref={trunkRef} position={[0, 0, 0]}><cylinderGeometry args={[0.2, 0.8, 14, 8]} /><meshStandardMaterial color="#3E2723" roughness={0.9} metalness={0.1} /></mesh>
       <points ref={pointsRef}> <bufferGeometry> <bufferAttribute attach="attributes-position" count={foliageData.current.length / 3} array={foliageData.current} itemSize={3} /> <bufferAttribute attach="attributes-size" count={foliageData.sizes.length} array={foliageData.sizes} itemSize={1} /> </bufferGeometry> <foliageMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} /> </points>
       <instancedMesh ref={lightsRef} args={[undefined, undefined, lightsData.count]}><sphereGeometry args={[0.05, 8, 8]} /><meshStandardMaterial color="#ffddaa" emissive="#ffbb00" emissiveIntensity={3} toneMapped={false} /></instancedMesh>
+      {/* 柔光 bokeh 点 */}
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" count={bokehPositions.length / 3} array={bokehPositions} itemSize={3} />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.18}
+          sizeAttenuation
+          color="#ffd9a6"
+          transparent
+          opacity={0.45}
+          depthWrite={false}
+        />
+      </points>
       {photoObjects.map((obj, index) => (
         <group key={obj.id} ref={(el) => { obj.ref.current = el; }}>
           <PolaroidPhoto

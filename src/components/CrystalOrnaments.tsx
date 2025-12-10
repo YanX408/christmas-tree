@@ -1,12 +1,13 @@
 
 import React, { useContext, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { Sparkles } from '@react-three/drei';
 import * as THREE from 'three';
 import { TreeContext, TreeContextType } from '../types';
 
 const CrystalOrnaments: React.FC = () => {
   // 1. 引入 panOffset
-  const { state, rotationSpeed, panOffset } = useContext(TreeContext) as TreeContextType;
+  const { state, rotationSpeed, panOffset, ornamentTheme } = useContext(TreeContext) as TreeContextType;
   const groupRef = useRef<THREE.Group>(null);
 
   const progress = useRef(0);
@@ -15,12 +16,18 @@ const CrystalOrnaments: React.FC = () => {
   // 2. 增加平滑位移 Ref
   const currentPan = useRef({ x: 0, y: 0 });
 
+  const palettes = useMemo(() => ([
+    ['#D32F2F', '#FFD700', '#2E7D32'], // 经典红金绿
+    ['#5AD7FF', '#C7F9FF', '#8B5CF6'], // 冰蓝 + 霓虹紫
+    ['#FF9AA2', '#FFDAC1', '#FFB347'] // 糖果粉橙
+  ]), []);
+  const themeColors = palettes[((ornamentTheme % palettes.length) + palettes.length) % palettes.length];
+
   const ornaments = useMemo(() => {
     const count = 50; // 减少装饰物数量，让照片更突出
     const items = [];
 
-    // Christmas colors: Red, Gold, Green
-    const colors = ['#D32F2F', '#FFD700', '#2E7D32'];
+    const colors = themeColors;
 
     for (let i = 0; i < count; i++) {
       // Tree Form Data
@@ -56,7 +63,7 @@ const CrystalOrnaments: React.FC = () => {
       });
     }
     return items;
-  }, []);
+  }, [themeColors]);
 
   useFrame((state3d, delta) => {
     const targetProgress = state === 'FORMED' ? 1 : 0;
@@ -83,9 +90,15 @@ const CrystalOrnaments: React.FC = () => {
         if (child.name === 'STAR') {
           const starY = THREE.MathUtils.lerp(10, 7.5, ease);
           child.position.set(0, starY, 0);
-          child.rotation.y += delta * 0.5;
-          const s = 1.0 + Math.sin(state3d.clock.elapsedTime * 3) * 0.1;
-          child.scale.setScalar(THREE.MathUtils.lerp(0, s, ease));
+          child.rotation.y += delta * 0.8;
+          const pulse = 1.0 + Math.sin(state3d.clock.elapsedTime * 4) * 0.12;
+          child.scale.setScalar(THREE.MathUtils.lerp(0, 1.3 * pulse, ease));
+          const light = child.children.find(c => (c as any).isPointLight) as THREE.PointLight | undefined;
+          if (light) {
+            light.intensity = 2 + Math.sin(state3d.clock.elapsedTime * 3) * 0.5;
+            light.distance = 9;
+            light.decay = 1.8;
+          }
           return;
         }
 
@@ -112,12 +125,14 @@ const CrystalOrnaments: React.FC = () => {
         const tX = currentR * Math.cos(currentAngle);
         const tZ = currentR * Math.sin(currentAngle);
 
+        const bob = Math.sin(state3d.clock.elapsedTime * 1.2 + i) * 0.05;
         child.position.x = THREE.MathUtils.lerp(cRotatedX, tX, ease);
-        child.position.y = y;
+        child.position.y = y + bob;
         child.position.z = THREE.MathUtils.lerp(cRotatedZ, tZ, ease);
 
-        child.rotation.x += delta * (1 - ease);
-        child.rotation.y += delta * (1 - ease);
+        // 玻璃/金属质感 & 慢速自旋
+        child.rotation.x += delta * (0.5 - ease * 0.2);
+        child.rotation.y += delta * (0.8 - ease * 0.3);
       });
     }
   });
@@ -131,12 +146,13 @@ const CrystalOrnaments: React.FC = () => {
 
           <meshStandardMaterial
             color={o.color}
-            roughness={0.4}
-            metalness={0.3}
+            roughness={0.18}
+            metalness={0.82}
             emissive={o.color}
-            emissiveIntensity={0.3}
+            emissiveIntensity={0.6}
             transparent
             opacity={0.85}
+            envMapIntensity={1.5}
           />
         </mesh>
       ))}
@@ -147,13 +163,14 @@ const CrystalOrnaments: React.FC = () => {
         <meshStandardMaterial
           color="#ffdd00"
           emissive="#ffaa00"
-          emissiveIntensity={2}
-          roughness={0.2}
+          emissiveIntensity={3}
+          roughness={0.15}
           metalness={1.0}
           toneMapped={false}
         />
-        <pointLight intensity={1.5} color="#ffaa00" distance={8} decay={2} />
+        <pointLight intensity={2} color="#ffbb55" distance={9} decay={1.8} />
       </mesh>
+      <Sparkles count={50} scale={1.5} size={8} speed={0.8} opacity={0.6} color="#ffd699" position={[0, 7.8, 0]} />
     </group>
   );
 };

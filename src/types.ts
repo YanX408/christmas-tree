@@ -44,6 +44,14 @@ export interface TreeContextType {
   // 调试信息
   debugInfo: GestureDebugInfo | null;
   setDebugInfo: Dispatch<SetStateAction<GestureDebugInfo | null>>;
+
+  // 装饰主题切换
+  ornamentTheme: number;
+  setOrnamentTheme: Dispatch<SetStateAction<number>>;
+
+  // 灯光脉冲信号（时间戳）
+  lightPulse: number;
+  setLightPulse: Dispatch<SetStateAction<number>>;
 }
 
 export interface GestureDebugInfo {

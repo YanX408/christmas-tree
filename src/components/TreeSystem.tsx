@@ -8,7 +8,8 @@ import { TreeContext, ParticleData, TreeContextType } from '../types';
 
 // ... (FoliageMaterial shader 代码保持不变) ...
 const FoliageMaterial = shaderMaterial(
-  { uTime: 0, uColor: new THREE.Color('#004225'), uColorAccent: new THREE.Color('#00fa9a'), uPixelRatio: 1 },
+  // 调整为温暖金色氛围的小粒子
+  { uTime: 0, uColor: new THREE.Color('#b38f5a'), uColorAccent: new THREE.Color('#fff4d6'), uPixelRatio: 1 },
   ` uniform float uTime; uniform float uPixelRatio; attribute float size; varying vec3 vPosition; varying float vBlink; vec3 curl(float x, float y, float z) { float eps=1.,n1,n2,a,b;x/=eps;y/=eps;z/=eps;vec3 curl=vec3(0.);n1=sin(y+cos(z+uTime));n2=cos(x+sin(z+uTime));curl.x=n1-n2;n1=sin(z+cos(x+uTime));n2=cos(y+sin(x+uTime));curl.z=n1-n2;n1=sin(x+cos(y+uTime));n2=cos(z+sin(y+uTime));curl.z=n1-n2;return curl*0.1; } void main() { vPosition=position; vec3 distortedPosition=position+curl(position.x,position.y,position.z); vec4 mvPosition=modelViewMatrix*vec4(distortedPosition,1.0); gl_Position=projectionMatrix*mvPosition; gl_PointSize=size*uPixelRatio*(60.0/-mvPosition.z); vBlink=sin(uTime*2.0+position.y*5.0+position.x); } `,
   ` uniform vec3 uColor; uniform vec3 uColorAccent; varying float vBlink; void main() { vec2 xy=gl_PointCoord.xy-vec2(0.5); float ll=length(xy); if(ll>0.5) discard; float strength=pow(1.0-ll*2.0,3.0); vec3 color=mix(uColor,uColorAccent,smoothstep(-0.8,0.8,vBlink)); gl_FragColor=vec4(color,strength); } `
 );
@@ -179,11 +180,21 @@ const TreeSystem: React.FC = () => {
   }, []);
 
   const lightThemes = useMemo(() => ([
-    { color: '#ffddaa', emissive: '#ffbb00', base: 3.0 },
-    { color: '#b7e9ff', emissive: '#6fd6ff', base: 2.6 },
-    { color: '#ffd8f6', emissive: '#ff8bd1', base: 2.8 }
+    { color: '#ffe3b3', emissive: '#ffbd73', base: 3.2 }, // 0 暖光主色
+    { color: '#c9f3c9', emissive: '#7adf7d', base: 3.0 }, // 1 绿暖
+    { color: '#ffd7e5', emissive: '#ff9fc7', base: 2.8 }, // 2 玫瑰粉暖
+    { color: '#d8ecff', emissive: '#9ccfff', base: 2.7 }, // 3 雾蓝
+    { color: '#ffeacc', emissive: '#ffcd88', base: 2.9 }  // 4 糖果暖
+  ]), []);
+  const foliageThemes = useMemo(() => ([
+    { color: '#b38f5a', accent: '#ffe9c2' },  // 0 暖光
+    { color: '#3ea86a', accent: '#9cf3c7' },  // 1 绿
+    { color: '#f0a9c0', accent: '#ffd7e8' },  // 2 玫瑰粉
+    { color: '#8fbfe8', accent: '#d8f1ff' },  // 3 蓝
+    { color: '#f3cfa2', accent: '#ffe7c2' }   // 4 糖果暖
   ]), []);
   const activeLightTheme = lightThemes[((ornamentTheme % lightThemes.length) + lightThemes.length) % lightThemes.length];
+  const activeFoliageTheme = foliageThemes[((ornamentTheme % foliageThemes.length) + foliageThemes.length) % foliageThemes.length];
 
   useEffect(() => {
     if (!lightsRef.current) return;
@@ -191,6 +202,15 @@ const TreeSystem: React.FC = () => {
     mat.color.set(activeLightTheme.color);
     mat.emissive.set(activeLightTheme.emissive);
   }, [activeLightTheme]);
+
+  useEffect(() => {
+    if (!pointsRef.current) return;
+    const mat = pointsRef.current.material as any;
+    if (mat?.uniforms?.uColor && mat?.uniforms?.uColorAccent) {
+      mat.uniforms.uColor.value = new THREE.Color(activeFoliageTheme.color);
+      mat.uniforms.uColorAccent.value = new THREE.Color(activeFoliageTheme.accent);
+    }
+  }, [activeFoliageTheme]);
 
   // 加载照片文件列表
   useEffect(() => {
@@ -248,7 +268,7 @@ const TreeSystem: React.FC = () => {
     const particleCount = 4500;
     const foliage = new Float32Array(particleCount * 3); const foliageChaos = new Float32Array(particleCount * 3); const foliageTree = new Float32Array(particleCount * 3); const sizes = new Float32Array(particleCount);
     const sphere = random.inSphere(new Float32Array(particleCount * 3), { radius: 18 }); for (let i = 0; i < particleCount * 3; i++) foliageChaos[i] = sphere[i];
-    for (let i = 0; i < particleCount; i++) { const i3 = i * 3; const h = Math.random() * 14; const coneRadius = (14 - h) * 0.45; const angle = h * 3.0 + Math.random() * Math.PI * 2; foliageTree[i3] = Math.cos(angle) * coneRadius; foliageTree[i3 + 1] = h - 6; foliageTree[i3 + 2] = Math.sin(angle) * coneRadius; sizes[i] = Math.random() * 1.5 + 0.5; }
+    for (let i = 0; i < particleCount; i++) { const i3 = i * 3; const h = Math.random() * 14; const coneRadius = (14 - h) * 0.45; const angle = h * 3.0 + Math.random() * Math.PI * 2; foliageTree[i3] = Math.cos(angle) * coneRadius; foliageTree[i3 + 1] = h - 6; foliageTree[i3 + 2] = Math.sin(angle) * coneRadius; sizes[i] = (Math.random() * 1.5 + 0.5) * 3.20; }
 
     const lightCount = 300;
     const lightChaos = new Float32Array(lightCount * 3); const lightTree = new Float32Array(lightCount * 3); const lSphere = random.inSphere(new Float32Array(lightCount * 3), { radius: 20 });
@@ -519,7 +539,7 @@ const TreeSystem: React.FC = () => {
           <bufferAttribute attach="attributes-position" count={bokehPositions.length / 3} array={bokehPositions} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          size={0.18}
+          size={0.28}
           sizeAttenuation
           color="#ffd9a6"
           transparent

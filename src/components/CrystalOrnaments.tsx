@@ -17,9 +17,11 @@ const CrystalOrnaments: React.FC = () => {
   const currentPan = useRef({ x: 0, y: 0 });
 
   const palettes = useMemo(() => ([
-    ['#D32F2F', '#FFD700', '#2E7D32'], // 经典红金绿
-    ['#5AD7FF', '#C7F9FF', '#8B5CF6'], // 冰蓝 + 霓虹紫
-    ['#FF9AA2', '#FFDAC1', '#FFB347'] // 糖果粉橙
+    ['#ffb86c', '#ff9bb5', '#ffe6b3'], // 0 暖光+蜜桃粉+奶油
+    ['#1b5e20', '#2e7d32', '#f7d774'], // 1 深绿+常青绿+暖金点缀
+    ['#f28ba9', '#ffd7ba', '#8bcaba'], // 2 玫瑰粉+奶油+薄荷绿
+    ['#8abded', '#cfe7ff', '#ffd6a5'], // 3 冰蓝+雾白+暖杏
+    ['#ff9aa2', '#ffd1dc', '#ffe8a3']  // 4 糖果粉+浅粉+淡金
   ]), []);
   const themeColors = palettes[((ornamentTheme % palettes.length) + palettes.length) % palettes.length];
 

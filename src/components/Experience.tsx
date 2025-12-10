@@ -59,18 +59,11 @@ const Experience: React.FC = () => {
       {/* Environment */}
       <Stars radius={50} depth={50} count={3000} factor={4} saturation={0} fade speed={1} />
 
-      {/* 多层次闪光星星 - 模拟真实夜空中部分星星闪烁 */}
-      {/* 慢速闪烁的金色星星 */}
-      <Sparkles count={300} scale={25} size={4} speed={0.3} opacity={0.6} color="#ffd700" />
-      <Sparkles count={200} scale={30} size={3} speed={0.2} opacity={0.4} color="#ffffcc" />
-
-      {/* 中速闪烁的白色/银色星星 */}
-      <Sparkles count={250} scale={20} size={2.5} speed={0.5} opacity={0.5} color="#ffffff" />
-      <Sparkles count={150} scale={28} size={2} speed={0.4} opacity={0.3} color="#e6e6fa" />
-
-      {/* 快速闪烁的彩色点缀 */}
-      <Sparkles count={100} scale={18} size={2} speed={0.7} opacity={0.4} color="#ff6b6b" />
-      <Sparkles count={100} scale={18} size={2} speed={0.65} opacity={0.4} color="#4ecdc4" />
+      {/* 多层次闪光星星 - 暖黄 + 少量粉色 */}
+      <Sparkles count={320} scale={25} size={4.2} speed={0.26} opacity={0.6} color="#ffd87a" />
+      <Sparkles count={220} scale={30} size={3.2} speed={0.22} opacity={0.48} color="#ffe9c2" />
+      <Sparkles count={180} scale={22} size={2.8} speed={0.45} opacity={0.45} color="#ffcfa0" />
+      <Sparkles count={140} scale={28} size={2.4} speed={0.36} opacity={0.35} color="#f9c0d6" />
 
       <Environment preset="city" environmentIntensity={0.5} />
 

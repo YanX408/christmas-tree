@@ -39,7 +39,8 @@
 npm install
 
 # 开发预览
-npm run dev   # 访问 http://localhost:5173
+npm run dev    
+npm run server  # 启动文件服务器（用于管理照片）
 
 # 生产构建
 npm run build
@@ -89,11 +90,6 @@ christmas-tree/
 ### 样式
 - **Tailwind CSS 4** - 实用优先的 CSS 框架
 
-## 📸 添加照片
-
-1. 将照片放入 `public/photos/` 目录
-2. 照片命名格式：`YYYY_MM_序号.jpg`（例如：`2024_12_1.jpg`）
-3. 照片会自动按时间排序并在树上显示
 
 > 注意：`public/photos/` 目录下的照片不会被提交到 Git 仓库
 
@@ -106,10 +102,6 @@ christmas-tree/
 5. **关闭照片**：在照片大图上悬停 1 秒即可关闭
 
 ## 🛠️ 自定义配置
-
-### 修改照片路径
-
-在 `src/components/TreeSystem.tsx` 中修改 `photoData` 数组。
 
 ### 调整手势灵敏度
 
